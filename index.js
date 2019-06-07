@@ -1,240 +1,283 @@
 const express = require("express");
-const app = express();
+const cors = require('cors');
+const dbConnection = require("./db");
+const mysql = require('mysql');
 
+//details of mySql database
+const config = {
+    host: "localhost",
+    port: 3306,
+    user: "root",
+    password: "rootroot",
+    database: "fs_bnb"
+};
+const connection = mysql.createConnection(config);
+connection.connect();
+
+const app = express();
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-var users = new Array();
-var properties = new Array();
-var bookingRequests = new Array();
+const User = require("./src/models/users");
+const Provider = require("./src/models/providers");
+
+const Listing = require("./src/models/listing")
+
 
 //creating new users
 app.post("/users", (req, res) => {
     const user = req.body;
-    const bodyFirstName = user.firstname;
-    const bodyLastName = user.lastname;
-    const bodyEmail = user.email;
-    const bodyPassword = user.password;
+    console.log(user);
 
-    if (!bodyFirstName) {
-        return res.status(400).json({ message: "Invalid first name" });
-    }
+    connection.query("INSERT INTO user SET ?", user, (err, result) => {
+        if (err) {
+            console.log(err);
 
-    if (!bodyLastName) {
-        return res.status(400).json({ message: "Invalid last name" });
-    }
-
-    if (!bodyEmail) {
-        return res.status(400).json({ message: "Invalid email" });
-    }
-
-    if (!bodyPassword) {
-        return res.status(400).json({ message: "invalid password" });
-    }
-
-    let foundUser = null;
-    users.forEach(aUser => {
-        if (bodyEmail === aUser.email) {
-            founderUser = aUser;
+            if (err.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({ message: err.sqlMessage });
+            } else {
+                return res.status(500).json({ message: "Failed to insert. Please try again." });
+            }
         }
+
+        console.log(result);
+
+        var responseUser = {
+            id: result.insertId,
+            firstname: user.firstname,
+            lastname: user.lastname,
+            email: user.email,
+            password: user.password
+        };
+
+        return res.status(200).json(responseUser);
+
     });
-
-    if (foundUser != null) {
-        return res.status(400).json({ message: "Email already in use" });
-    }
-
-    //if email is unique, and all fields are filled:
-    var newUser = {
-        id: users.length + 1,
-        firstname: bodyFirstName,
-        lastname: bodyLastName,
-        email: bodyEmail,
-        password: bodyPassword
-    }
-    users.push(newUser);
-
-    //return the new user with details:
-    res.json(newUser);
-
+    // res.json("Yay!");
 });
 
-//logging in
-app.post("/users/authentication", (req, res) => {
-    const user = req.body;
-    const bodyEmail = user.email;
-    const bodyPassword = user.password;
-
-    //checking if email field is blank
-    if (!bodyEmail) {
-        return res.status(400).json({ message: "Invalid email" });
-    }
-
-    //checking if password field is blank
-    if (!bodyPassword) {
-        return res.status(400).json({ message: "Please enter a password" })
-    }
-
-
-    //checking if email matches email in database
-    //then checking if password matches
-    users.forEach(aUser => {
-        if (bodyEmail === aUser.email) {
-            if (bodyPassword === aUser.password) {
-                //how to combine??
-                res.send("Login successful; found user!");
-                res.send(aUser.email);
-            }
-            else {
-                return res.status(400).json({ message: "Wrong password" });
-            }
+//get user by ID
+//THIS WORKS, but cant implement 
+//don't know how to adjust profile page to use it
+app.get("/users/:id", (req, res) => {
+    const userId = req.params.id;
+    connection.query("Select * from user where id = ? ", userId, (err, result) => {
+        if (err) {
+            console.log("error: ", err);
+            return res.status(500).json({message: "Failed to find user"});
         }
+        const userResponse = {
+            firstname: result[0].firstname,
+            id: result[0].id,
+            email: result[0].email
+        }
+
+        console.log(userResponse);
+        
+        return res.status(200).json(userResponse);
+
+        
+    })
+});
+
+
+//logging in users
+app.post("/users/authentication", (req, res) => {
+    const authReq = req.body;
+    //check if email exists:
+    email = authReq.email;
+    password = authReq.password;
+    connection.query("SELECT * FROM user WHERE email = ? AND password = ?",
+    [
+        authReq.email, authReq.password
+    ], (err, result) => {
+        if(err) {
+            return res.status(500).json({message: "Error - failed to login"});
+        }
+        if (result.length === 0) {
+            return res.status(401).json({message: "Invalid email or password"});
+        }
+
+        //create new object without the password
+        const responseUser = {
+            id: result[0].id,
+            firstname: result[0].firstname,
+            lastname: result[0].lastname,
+            email: result[0].email
+        }
+
+        return res.json(responseUser);
+
     })
 
 });
 
-//create a new property
-app.post("/properties", (req, res) => {
-    const property = req.body;
+//creating new listings
+app.post("/listings", (req, res) => {
+    const listing = req.body;
+    console.log(listing)
 
-    const bodyName = property.name;
-    const bodyLocation = property.location;
-    const bodyImageUrl = property.imageUrl;
-    const bodyPrice = property.price;
+    connection.query("INSERT INTO listing SET ?", listing, (err, result) => {
+        if (err) {
+            console.log(err);
 
-    if (!bodyName) {
-        return res.status(400).json({ message: "Please name your property." });
-    }
-
-    if (!bodyLocation) {
-        return res.status(400).json({ message: "Please list property's location." });
-    }
-
-    if (!bodyImageUrl) {
-        return res.status(400).json({ message: "Please include an image URL." });
-    }
-
-    if (!bodyPrice) {
-        return res.status(400).json({ message: "Please include your property's price." });
-    }
-
-    //checking if property is already listed using image URL.
-    //potentially a better way?
-    let foundProperty = null;
-    properties.forEach(aProperty => {
-        if (bodyImageUrl === aProperty.imageUrl) {
-            foundProperty = aProperty;
+            if (err.code === 'ER_DUP_ENTRY') {
+                return res.status(400).json({ message: err.sqlMessage });
+            } else {
+                return res.status(500).json({ message: "Failed to insert. Please try again." });
+            }
         }
+
+        console.log(result);
+
+        var responseListing = {
+            id: result.insertId,
+            name: listing.name,
+            location: listing.location,
+            price: listing.price,
+            imageUrl: listing.imageUrl,
+            providerId: listing.userId
+        };
+
+        return res.status(200).json(responseListing);
     });
-
-    if (foundProperty != null) {
-        return res.status(400).json({ message: "Image already in use - this listing already exists." });
-    }
-
-    var newProperty = {
-        id: properties.length + 1,
-        name: bodyName,
-        location: bodyLocation,
-        imageUrl: bodyImageUrl,
-        price: bodyPrice
-
-    }
-
-    properties.push(newProperty);
-
-    //return new property with details.
-    res.json(newProperty);
 });
 
-//delete a property
-app.delete("/properties/:id", (req, res) => {
-    const propertyId = req.params.id;
+//update specific listing
+app.post("/listings/:id", (req, res) => {
+    const ListingId = req.params.id;
+    listing = req.body;
+    console.log(listing)
 
-    if (!propertyId) {
-        return res.status(400).json({ message: "Please include a property ID." });
-    }
+    connection.query("UPDATE listing SET ? WHERE id = ?",
+        [listing, ListingId], (err, result) => {
+            if (err) {
+                console.log("error: ", err);
+            }
 
-    for (var k = 0; k < properties.length; k++) {
-        const aProperty = properties[k];
-        if (aProperty.id == propertyId) {
-            //delete listing
-            properties.splice(k, 1);
+            console.log(result);
 
-            //adjust id's?
+            var updatedListing = {
+                id: listing.id,
+                name: listing.name,
+                location: listing.location,
+                imageUrl: listing.imageUrl,
+                price: listing.price
+            };
 
-            return res.status(200).json({ message: "Property successfully deleted." });
-        }
-    }
+            return res.status(200).json(updatedListing);
 
-    return res.status(404).json({ message: "Property not found" });
+
+
+        });
 });
 
-//get property by id
-app.get("/properties/:id", (req, res) => {
+app.delete("/listings/:id", (req, res) => {
     const propertyId = req.params.id;
-
-    if (!propertyId) {
-        return res.status(400).json({ message: "Please include a property ID." });
-    }
-
-    for (var k = 0; k < properties.length; k++) {
-        const aProperty = properties[k];
-        if (aProperty.id == propertyId) {
-            return res.status(200).json(aProperty);
-
-        }
-    }
-
-    return res.status(400).json({ message: "Property not found." });
-
-})
-
-//creating booking requests
-app.post("/properties/:id/bookings", (req, res) => {
-    const propertyId = req.params.id;
-
-    const bookingReq = req.body;
-
-    //pulling from user request
-    //as of now, dates are just integers
-    const startDate = bookingReq.dateFrom;
-    const endDate = bookingReq.dateTo;
-    const usersId = bookingReq.userID;
-
-    if (!propertyId) {
-        return res.status(400).json({ message: "Please include a property ID." });
-    }
-
-    //why set as "new"? then first booking will be "new" instead of "accepted"
-    let status = "ACCEPTED";
-    for (var k = 0; k < bookingRequests.length; k++) {
-        const aBooking = bookingRequests[k];
-        if (bookingReq.dateFrom >= aBooking.dateFrom && bookingReq.dateFrom <= aBooking.dateTo) {
-            status = "REJECTED";
-        }
-        else if (bookingReq.dateTo >= aBooking.dateFrom && bookingReq.dateTo <= aBooking.dateTo) {
-            status = "REJECTED";
+    listing = req.body;
+    connection.query("DELETE FROM listing WHERE id = ?", propertyId, (err, result) => {
+        if (err) {
+            console.log("error: ", err);
         }
         else {
-            status = "ACCEPTED";
+            res.status(200).json({ message: "Successfully deleted" })
         }
-    }
-
-
-    var newBookingReq = {
-        id: bookingRequests.length + 1,
-        dateFrom: startDate,
-        dateTo: endDate,
-        userId: usersId,
-        propId: propertyId,
-        bookingStatus: status
-    }
-
-    bookingRequests.push(newBookingReq);
-    res.json(newBookingReq);
+    })
 });
 
+//get all listings
+
+app.get("/listings", (req, res) => {
+    connection.query("Select * from listing", (err, result) => {
+        if(err) {
+            console.log("error: ", err);
+            return res.status(500).json({message: "Failed to return properties"});
+        }
+        else {
+            return res.status(200).json(result);
+        }
+    })
+});
+
+//get listings by id
+app.get("/listings/:id", (req, res) => {
+    const propertyId = req.params.id;
+    listing = req.body;
+    connection.query("Select * from listing where id = ? ", propertyId, (err, result) => {
+        if (err) {
+            console.log("error: ", err);
+            return res.status(500).json({message: "Failed to find property"});
+        }
+        else {
+            return res.status(200).json(result);
+
+        }
+    })
+});
+
+//creating new bookings
+app.post("/listings/:id/bookings", (req, res) => {
+    const listingId = req.params.id;
+    const request = req.body;
+    console.log(request)
+
+    connection.query("INSERT INTO booking SET ?", request, (err, result) => {
+        if (err) {
+            console.log(err);
+        }
+
+        console.log(result);
+
+        var responseRequest = {
+            id: result.insertId,
+            userId: request.UserId,
+            propertyId: listingId,
+            startDate: request.startDate,
+            endDate: request.endDate,
+        };
+
+        return res.status(200).json(responseRequest);
+    });
+});
+
+//logging in
+// app.post("/users/authentication", (req, res) => {
+//     const user = req.body;
+//     const bodyEmail = user.email;
+//     const bodyPassword = user.password;
+
+//     //checking if email field is blank
+//     if (!bodyEmail) {
+//         return res.status(400).json({ message: "Invalid email" });
+//     }
+
+//     //checking if password field is blank
+//     if (!bodyPassword) {
+//         return res.status(400).json({ message: "Please enter a password" })
+//     }
+
+
+//     //checking if email matches email in database
+//     //then checking if password matches
+//     users.forEach(aUser => {
+//         if (bodyEmail === aUser.email) {
+//             if (bodyPassword === aUser.password) {
+//                 //how to combine??
+//                 res.send("Login successful; found user!");
+//                 res.send(aUser.email);
+//             }
+//             else {
+//                 return res.status(400).json({ message: "Wrong password" });
+//             }
+//         }
+//     })
+
+// });
+
+
 //finding booking requests for a given property
-app.get("/properties/:id/bookings", (req,res) => {
+app.get("/properties/:id/bookings", (req, res) => {
     propertyBookings = new Array();
     const propertyId = req.params.id;
 
@@ -244,7 +287,7 @@ app.get("/properties/:id/bookings", (req,res) => {
 
     for (var k = 0; k < bookingRequests.length; k++) {
         const aBooking = bookingRequests[k];
-        if(aBooking.id = propertyId) {
+        if (aBooking.id = propertyId) {
             propertyBookings.push(aBooking);
         }
     }
@@ -252,4 +295,4 @@ app.get("/properties/:id/bookings", (req,res) => {
     res.json(propertyBookings);
 })
 
-app.listen(4000, () => console.log("Server is running."));
+app.listen(4000, () => console.log("Server is running on 4000."));
