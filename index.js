@@ -1,6 +1,5 @@
 const express = require("express");
 const cors = require('cors');
-const dbConnection = require("./db");
 const mysql = require('mysql');
 
 //details of mySql database
@@ -57,9 +56,20 @@ app.post("/users", (req, res) => {
     // res.json("Yay!");
 });
 
+//get all users
+app.get("/users", (req, res) => {
+    connection.query("Select * from user", (err, result) => {
+        if(err) {
+            console.log("error: ", err);
+            return res.status(500).json({message: "Failed to return users"});
+        }
+        else {
+            return res.status(200).json(result);
+        }
+    })
+});
+
 //get user by ID
-//THIS WORKS, but cant implement 
-//don't know how to adjust profile page to use it
 app.get("/users/:id", (req, res) => {
     const userId = req.params.id;
     connection.query("Select * from user where id = ? ", userId, (err, result) => {
@@ -115,6 +125,7 @@ app.post("/users/authentication", (req, res) => {
 
 //creating new listings
 app.post("/listings", (req, res) => {
+
     const listing = req.body;
     console.log(listing)
 
@@ -137,7 +148,7 @@ app.post("/listings", (req, res) => {
             location: listing.location,
             price: listing.price,
             imageUrl: listing.imageUrl,
-            providerId: listing.userId
+            userId: listing.userId
         };
 
         return res.status(200).json(responseListing);
@@ -173,6 +184,7 @@ app.post("/listings/:id", (req, res) => {
         });
 });
 
+//delete listing by id
 app.delete("/listings/:id", (req, res) => {
     const propertyId = req.params.id;
     listing = req.body;
@@ -187,7 +199,6 @@ app.delete("/listings/:id", (req, res) => {
 });
 
 //get all listings
-
 app.get("/listings", (req, res) => {
     connection.query("Select * from listing", (err, result) => {
         if(err) {
@@ -203,7 +214,7 @@ app.get("/listings", (req, res) => {
 //get listings by id
 app.get("/listings/:id", (req, res) => {
     const propertyId = req.params.id;
-    listing = req.body;
+    // listing = req.body;
     connection.query("Select * from listing where id = ? ", propertyId, (err, result) => {
         if (err) {
             console.log("error: ", err);
@@ -216,9 +227,27 @@ app.get("/listings/:id", (req, res) => {
     })
 });
 
+//get all listings by user id
+app.get("/listings/user/:id", (req, res) => {
+    const userId = req.params.id;
+    connection.query("Select * from listing where userId = ? ", userId, (err, result) => {
+
+        if( err ) {
+            console.log("error: ", err);
+        }
+        if (result.length === 0) {
+            console.log("User has no listings.");
+        }
+        else {
+            return res.status(200).json(result); //will be an array
+        }
+    })
+
+});
+
 //creating new bookings
-app.post("/listings/:id/bookings", (req, res) => {
-    const listingId = req.params.id;
+app.post("/bookings", (req, res) => {
+
     const request = req.body;
     console.log(request)
 
@@ -226,16 +255,21 @@ app.post("/listings/:id/bookings", (req, res) => {
         if (err) {
             console.log(err);
         }
-
-        console.log(result);
+        else {
+        console.log(result.insertId);
 
         var responseRequest = {
             id: result.insertId,
-            userId: request.UserId,
-            propertyId: listingId,
+            userId: request.userId,
+            propertyId: request.propertyId,
             startDate: request.startDate,
             endDate: request.endDate,
+            status: request.status
+        }
+
         };
+
+        console.log(responseRequest.id);
 
         return res.status(200).json(responseRequest);
     });
@@ -277,22 +311,64 @@ app.post("/listings/:id/bookings", (req, res) => {
 
 
 //finding booking requests for a given property
-app.get("/properties/:id/bookings", (req, res) => {
-    propertyBookings = new Array();
+app.get("/bookings/:id", (req, res) => {
     const propertyId = req.params.id;
+    connection.query("Select * from booking where propertyId = ? ", propertyId, (err, result) => {
 
-    if (!propertyId) {
-        return res.status(400).json({ message: "Please include a property ID." });
-    }
-
-    for (var k = 0; k < bookingRequests.length; k++) {
-        const aBooking = bookingRequests[k];
-        if (aBooking.id = propertyId) {
-            propertyBookings.push(aBooking);
+        if( err ) {
+            console.log("error: ", err);
         }
-    }
-
-    res.json(propertyBookings);
+        if (result.length === 0) {
+            console.log("Property has no requests.");
+        }
+        else {
+            return res.status(200).json(result); //will be an array
+        }
+    })
 })
+
+//get all bookings
+app.get("/bookings", (req, res) => {
+    connection.query("Select * from booking", (err, result) => {
+        if(err) {
+            console.log("error: ", err);
+            return res.status(500).json({message: "Failed to return bookings"});
+        }
+        else {
+            return res.status(200).json(result);
+        }
+    })
+});
+
+//update book request - for provider to accept/reject
+app.post("/booking/:id", (req, res) => {
+    const bookingId = req.params.id;
+    booking = req.body;
+    console.log(listing)
+
+    connection.query("UPDATE listing SET ? WHERE id = ?",
+        [booking, bookingId], (err, result) => {
+            if (err) {
+                console.log("error: ", err);
+            }
+
+            console.log(result);
+
+            var updatedListing = {
+                id: result.insertId,
+                userId: request.userId,
+                propertyId: request.propertyId,
+                startDate: request.startDate,
+                endDate: request.endDate,
+                status: request.status
+            };
+
+            return res.status(200).json(updatedListing);
+
+
+
+        });
+});
+
 
 app.listen(4000, () => console.log("Server is running on 4000."));
